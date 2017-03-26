@@ -44,19 +44,23 @@ def load_feature_vectors(image_path, fvector_path, should_store):
     
 def write_features(kp, desc, file_path):
     f = open(file_path, "w")
-    f.write(pkl.dumps(desc))
+    f.write(pkl.dumps(np.array(desc)))
     f.close()
 
 def load_feature_vectors_from_sample(images_trainning_dir, feature_vector_dir, should_store):
     
-    all_features = []
+    all_features = None
     for f in listdir(images_trainning_dir):
         file_path = join(images_trainning_dir, f)
         file_name = path.basename(file_path).split('.')
-        print(file_path)
+
         if isfile(file_path) and len(file_name) > 1:
             features = load_feature_vectors(file_path, feature_vector_dir + file_name[0], should_store)
-            all_features += [np.array(features[1])]
+            if features[1] is not None:
+                if all_features is None:
+                    all_features = features[1]
+                else:
+                    all_features = np.vstack((all_features, features[1]))
             
     return all_features
         
@@ -97,18 +101,12 @@ def main():
     
     images_trainning_dir = './data/sample/'
     feature_vector_dir = './data/vectors/'
-    xvecs_path = './data/xvecs/sample.fvecs'
 
     # Loading dataset
-    data = load_feature_vectors_from_sample(images_trainning_dir, feature_vector_dir, True)
-    print('Data:', data)
-    utils.save_xvecs(data, relpath(xvecs_path))
-    
-    xvecs_data = utils.load_xvecs(relpath(xvecs_path))
+    data = load_feature_vectors_from_sample(images_trainning_dir, feature_vector_dir, False)
 
-    # Compute PCA of oxford dataset. See README in data/oxford for details
     # about this dataset.
-    P, mu = pca(xvecs_data)
+    P, mu = pca(data)
 
     # Mean center and rotate the data; includes dimension permutation.
     # It is worthwhile see how this affects recall performance. On this
@@ -116,12 +114,12 @@ def main():
     # this additional step to variance balance the dimensions typically
     # improves recall@1 by 3-5%. The benefit can be much greater depending
     # on the dataset.
-    xvecs_data = xvecs_data - mu
-    xvecs_data = np.dot(data, P)
+    data = data - mu
+    data = np.dot(data, P)
 
     # Create a train and test split. The test split will become
     # a set of queries for which we will compute the true nearest neighbors.
-    train, test = train_test_split(xvecs_data, test_size=0.2)
+    train, test = train_test_split(data, test_size=0.2)
 
     # Compute distance-sorted neighbors in training set for each point in test set.
     # These will be our groundtruth for recall evaluation.

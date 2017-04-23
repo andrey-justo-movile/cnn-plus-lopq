@@ -4,7 +4,7 @@ Created on Apr 3, 2017
 @author: andrey.justo
 '''
 
-from surf import load_feature_vectors_from_sample, compact
+from surf import load_feature_vectors_from_sample
 from sklearn.model_selection import train_test_split
 import time
 import numpy as np
@@ -12,11 +12,11 @@ import numpy as np
 # lopq
 from lopq import LOPQModel, LOPQSearcher
 from lopq.model import eigenvalue_allocation
+from lopq.eval import compute_all_neighbors, get_cell_histogram, get_recall
 
 def transform(array):
-    all_features = compact(array)
-    P, mu = pca(all_features)
-    all_features = all_features - mu
+    P, mu = pca(array)
+    all_features = array - mu
     all_features = np.dot(all_features, P)
     print('After PCA')
     
@@ -55,42 +55,41 @@ def main():
     
     images_trainning_dir = './data/sample/'
     feature_vector_dir = './data/vectors/'
-    hessian_threshold = 5000
+    hessian_threshold = 8000
     
     # Loading dataset
     a = time.time()
-    all_features = load_feature_vectors_from_sample(images_trainning_dir, feature_vector_dir, hessian_threshold, False)
-    all_features = np.asarray(all_features)
+    all_features = load_feature_vectors_from_sample(images_trainning_dir, feature_vector_dir, hessian_threshold)
+    all_features = transform(all_features)
     train, test = train_test_split(all_features, test_size=0.2)
-    train = transform(train)
-    print('Finished Loading SURF vectors:', (time.time() - a))
-    
+    print('Finished Load SURF vectors:', (time.time() - a), 'with shape:', all_features.shape)
+     
     # First test parameters
     a = time.time()
     m = create_model(train, 8, 16, 256, None)
-    print('Finish Fiting Model:', (time.time() - a))
-
+    print('Finish Fit Model:', (time.time() - a))
+ 
     a = time.time()
     calc_recall(m, train, test)
-    print('Finish Searching in Model:', (time.time() - a))
- 
+    print('Finish Search in Model:', (time.time() - a))
+  
     # Second test parameters
     a = time.time()
     m2 = create_model(train, 16, 16, 256, (m.Cs, None, None, None))
-    print('Finish Fiting Model:', (time.time() - a))
- 
+    print('Finish Fit Model:', (time.time() - a))
+  
     a = time.time()
     calc_recall(m2, train, test)
-    print('Finish Searching Model:', (time.time() - a))
- 
+    print('Finish Search in Model:', (time.time() - a))
+  
     # Third test parameters
     a = time.time()
     m3 = create_model(train, 16, 16, 512, (m.Cs, m.Rs, m.mus, None))
-    print('Finish Fiting Model:', (time.time() - a))
- 
+    print('Finish Fit Model:', (time.time() - a))
+  
     a = time.time()
     calc_recall(m3, train, test)
-    print('Finish Searching Model:', (time.time() - a))
+    print('Finish Search in Model:', (time.time() - a))
 
 
 def create_model(train, v, m, clusters, parameters):
@@ -99,41 +98,29 @@ def create_model(train, v, m, clusters, parameters):
         
     return model
     
-def calc_recall(model, train, test, quota=[1], threshold=10): 
+def calc_recall(model, train, test, quota=[1], threshold=0.1): 
 
     searcher = LOPQSearcher(model)
     searcher.add_data(train)
     recall = np.zeros(len(quota))
     
     for d in test:
-        search_parts(train, d, searcher, quota, recall, threshold)
+        search_parts(d, searcher, quota, recall, threshold)
 
     N = test.shape[0]
     print('Recall:', recall / N)
     return recall / N
 
-def search_parts(train, data, searcher, quota, recall, threshold):
+def search_parts(data, searcher, quota, recall, threshold):
     results, _ = searcher.search(data, quota[-1], with_dists=True)
     print('Results:', results)
-#     for j, res in enumerate(results):
-#         item = res
-# 
-#         if item.dist <= threshold:
-#             for k, t in enumerate(quota):
-#                 if j < t:
-#                     recall[k] += 1
-
-def calc_dist(train, test):
-    
-    from scipy.spatial.distance import cdist
-
-    dists = cdist(train, test)
-    nns = np.zeros(dists.shape, dtype=int)
-    
-    for i in xrange(dists.shape[0]):
-        nns[i] = np.argmin(dists[i])
-        
-    return nns
+    for j, res in enumerate(results):
+        item = res
+ 
+        if item.dist <= threshold:
+            for k, t in enumerate(quota):
+                if j < t:
+                    recall[k] += 1
 
 if __name__ == '__main__':
     main()
